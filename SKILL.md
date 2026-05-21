@@ -1,93 +1,59 @@
 ---
 name: pr-reviewer
-description: "Architecture-focused PR reviewer for large open-source Swift PRs. Teaches an agent how to dynamically analyze a PR by cloning the repo, reading live code, and producing structured reviews. No static architecture snapshots — the agent reads the actual codebase every time. No fluff output."
-tags: [code-review, github, architecture, open-source, swift]
+description: "Architecture-focused PR reviewer for open-source Swift repos. Clones repo fresh, reads live code, produces structured review with issues and review order."
+tags: [code-review, github, swift]
 triggers:
   - "review PR"
   - "PR review"
   - "review pull request"
   - "architecture review"
-  - "large PR"
-  - "stackotter PR"
 ---
 
-# PR Reviewer Skill
+# PR Reviewer
 
-## What This Is
+## Output Rules
 
-A methodology for reviewing large PRs (300+ lines) on open-source Swift repos.
-The agent clones the repo fresh, reads the actual code, and produces a structured
-architecture review. No static docs that go stale.
-
-## Output Rules (NON-NEGOTIABLE)
-
-- NO praise, NO hedging, NO restating the PR description
-- NO explanations of basic concepts
-- YES: concrete issues with file:line references
-- YES: architecture diagrams (ASCII)
-- YES: suggested review order with time estimates
-- Reads like a tool generated it, not a person
+- No praise, no hedging, no restating PR description
+- No explanations of basic concepts
+- Concrete issues with file:line references only
+- Reads like tool output
 
 ## Workflow
 
-### Step 1: Fetch PR Data
+### 1. Fetch PR
 
 ```bash
-# PR metadata
 curl -s "https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
-
-# Changed files (paginate if >100)
 curl -s "https://api.github.com/repos/{owner}/{repo}/pulls/{number}/files?per_page=100"
-
-# Review comments (inline)
 curl -s "https://api.github.com/repos/{owner}/{repo}/pulls/{number}/comments"
-
-# Discussion comments
 curl -s "https://api.github.com/repos/{owner}/{repo}/issues/{number}/comments"
 ```
 
-Parse with `strict=False` — GitHub patches contain control chars.
+Parse JSON with `strict=False` — patches contain control chars.
 
-### Step 2: Clone the Repo
-
-Clone to /tmp/{repo-name}. Read the ACTUAL code, not a cached summary.
+### 2. Clone Repo
 
 ```bash
-git clone --depth=1 https://github.com/{owner}/{repo}.git /tmp/{repo-name}
+git clone --depth=1 https://github.com/{owner}/{repo}.git /tmp/{repo}
 ```
 
-### Step 3: Explore the Structure
+### 3. Read Context
 
-Don't assume — read the actual directory layout:
-```bash
-find Sources -type f -name "*.swift" | head -100
-```
+For every changed file:
+- Read the full current file (not just the patch)
+- Read its imports/dependencies
+- Read the protocol it conforms to
+- Understand how it fits into the system
 
-Read key files to understand current architecture:
-- Package.swift (dependencies, targets)
-- Main module's directory structure
-- Any protocols/typealiases that define the architecture
+### 4. Analyze
 
-### Step 4: Read Context for Each Changed File
+For each file determine:
+- Architectural layer
+- Patterns followed or broken
+- Consistency with rest of codebase
+- What could go wrong
 
-For every file in the PR diff:
-1. Read the full current version of the file (not just the patch)
-2. Read files it imports or depends on
-3. Read the protocol it conforms to
-4. Understand how it fits into the larger system
-
-This is what makes agent reviews better than regex tools —
-you understand the code, not just the diff.
-
-### Step 5: Analyze
-
-For each changed file, determine:
-- What architectural layer it belongs to
-- What patterns it follows or breaks
-- Whether the approach is consistent with the rest of the codebase
-- What could go wrong (bugs, maintenance burden, API surface)
-
-### Step 6: Output Format
+### 5. Output
 
 ```
 PR #{number}: {title}
@@ -95,110 +61,102 @@ PR #{number}: {title}
 +{additions} / -{deletions} across {files} files, {commits} commits
 
 COMPONENT MAP
-=============
   {group} ({files} files, +{add} -{del})
     {status} +{add} -{del}  {filepath}
-  ...
 
 ARCHITECTURE
-============
-  {ASCII diagram of what this PR adds/changes}
-
+  {ASCII diagram}
   {NewType} ({kind})
     Purpose: {one line}
     File: {path}
     Used by: {consumers}
 
-  ...
-
 ISSUES
-======
   [{CATEGORY}] {title}
     File: {path}:{line}
     {what's wrong}
-    {suggested fix}
-
-  ...
+    {fix}
 
 REVIEW ORDER
-============
   1. {file} ({lines}L, ~{minutes}min)
-     Look for: {what to focus on}
-     Depends on: {dependencies}
-  ...
+     Look for: {focus}
+     Depends on: {deps}
 
 TOTAL ESTIMATED REVIEW TIME: {minutes} minutes
 ```
 
 ## Issue Categories
 
-Only flag objectively problematic things. No style opinions.
+Only flag objective problems. No style opinions.
 
-**[BUG]** — Incorrect logic, type safety, race conditions
-**[DUPLICATION]** — Same pattern 3+ times across files
-**[INCONSISTENCY]** — Different approaches to same problem
-**[TEST GAP]** — Specific untested scenarios
-**[API RISK]** — Public API hard to change later
-**[FORCE CAST]** — Unguarded force casts (check if guarded first)
+[BUG] — Incorrect logic, type safety, race conditions
+[DUPLICATION] — Same pattern 3+ times
+[INCONSISTENCY] — Different approaches to same problem
+[TEST GAP] — Specific untested scenarios
+[API RISK] — Public API hard to change later
+[FORCE CAST] — Unguarded force casts (check if guarded first)
 
-## Repo-Specific Patterns
+## Reading Time
 
-### moreSwift/swift-cross-ui
+New code: ~30 lines/min. Modified: ~50 lines/min. Min per file: 0.5min.
 
-SwiftUI-like cross-platform UI framework. Users write SwiftUI-style
-views; pluggable backends render them on each platform.
+---
 
-**Key architectural concepts:**
+## Repo: moreSwift/swift-cross-ui
 
-1. **BackendFeatures protocol system**
-   The monolithic AppBackend was split into ~35+ small protocols under
-   `BackendFeatures` namespace. Each feature (Buttons, TextFields, etc.)
-   has its own protocol with create/update/setValue methods.
-   `BaseAppBackend` = Core & Containers & PassiveViews & Controls.
-   `FullAppBackend` adds ~17 more (alerts, sheets, gestures, etc.).
-   When reviewing: check if new features should be optional (not all
-   backends can support everything) or required in FullAppBackend.
+SwiftUI-like cross-platform UI framework. Pluggable backends per platform.
 
-2. **View lifecycle: children → asWidget → computeLayout → commit**
-   `ViewGraphNode` manages this cycle. `commit()` is where backend
-   methods get called — force casts happen here. When reviewing new
-   view modifiers or backend features, trace through this lifecycle.
+### BackendFeatures Protocol System
 
-3. **EnvironmentValues propagation**
-   Features flow through EnvironmentValues (a struct with
-   [ObjectIdentifier: Any] storage). View modifiers use
-   `EnvironmentModifier` to create modified copies. Environment
-   flows top-down. When reviewing: check if data should flow through
-   environment vs. being stored on the widget directly.
+Monolithic AppBackend split into ~35+ small protocols under `BackendFeatures`.
+Each feature (Buttons, TextFields, etc.) has create/update/setValue methods.
 
-4. **State management**
-   Custom Publisher/Cancellable (not Combine). `@State` uses
-   `StateImpl<Storage>` with reference-type storage that persists
-   across view recomputations. `DynamicPropertyUpdater` discovers
-   properties via memory byte offset scanning.
+```
+BaseAppBackend = Core & Containers & PassiveViews & Controls
+FullAppBackend = BaseAppBackend & ~17 more (alerts, sheets, gestures, etc.)
+```
 
-5. **DummyBackend for testing**
-   In-memory backend with real widget class hierarchy (Button,
-   TextField, Container, etc.). Stores state without rendering.
-   Tests use Swift Testing (@Suite, @Test, #expect). When reviewing:
-   check if new features have DummyBackend support and tests.
+New features add a protocol under `BackendFeatures/`. Some should be optional
+(not in FullAppBackend) if not all backends can support them.
 
-6. **Backend widget types**
-   AppKit=NSView, Gtk=UnsafeMutablePointer<GtkWidget>,
-   WinUI=WinUI.FrameworkElement, DummyBackend=custom class hierarchy.
-   Type erasure via AnyViewGraphNode/AnyWidget prevents backend
-   generics from leaking into user code.
+### View Lifecycle
 
-7. **Code generation**
-   gyb templates generate TupleView1..10, ViewBuilder, SceneBuilder.
-   GTK bindings partially generated by GtkCodeGen.
+```
+children() → asWidget() → computeLayout() → commit()
+```
 
-**Directory structure (verify by reading actual code):**
+`ViewGraphNode` manages this. `commit()` calls backend methods — force casts
+happen here (`widget as! Backend2.Widget`).
+
+### EnvironmentValues Propagation
+
+Features flow through `EnvironmentValues` (struct with `[ObjectIdentifier: Any]`
+storage). View modifiers use `EnvironmentModifier`. Flows top-down.
+
+### State Management
+
+Custom `Publisher`/`Cancellable` (not Combine). `@State` uses `StateImpl<Storage>`
+with reference-type storage. `DynamicPropertyUpdater` discovers properties via
+memory byte offset scanning.
+
+### DummyBackend
+
+In-memory backend for testing. Real widget class hierarchy (Button, TextField,
+Container). Stores state without rendering. Tests use Swift Testing (@Suite,
+@Test, #expect).
+
+### Widget Types
+
+AppKit=NSView, Gtk=UnsafeMutablePointer<GtkWidget>, WinUI=WinUI.FrameworkElement,
+DummyBackend=custom classes. Type erasure via AnyViewGraphNode/AnyWidget.
+
+### Directory Layout
+
 ```
 Sources/
-├── SwiftCrossUI/           # Core framework
+├── SwiftCrossUI/
 │   ├── Backend/
-│   │   ├── BackendFeatures/ # Feature protocols
+│   │   ├── BackendFeatures/  # Feature protocols
 │   │   ├── BaseAppBackend.swift
 │   │   └── FullAppBackend.swift
 │   ├── Environment/
@@ -206,81 +164,116 @@ Sources/
 │   ├── State/
 │   ├── Values/
 │   ├── ViewGraph/
-│   └── Views/
-│       └── Modifiers/
+│   └── Views/ & Views/Modifiers/
 ├── AppKitBackend/
 ├── UIKitBackend/
 ├── GtkBackend/
 ├── Gtk3Backend/
 ├── WinUIBackend/
 ├── DummyBackend/
-├── Gtk/                    # GTK4 Swift bindings
+├── Gtk/
 └── GtkCodeGen/
 ```
 
-### moreSwift/swift-bundler
+### Common PR Types
 
-Xcode-independent tool for creating cross-platform Swift apps from
-Swift packages. Supports macOS, Linux, Windows, Android.
+- New backend feature (protocol + all backends)
+- New view modifier
+- Backend-specific implementation
+- Layout fixes
+- Platform bug fixes
 
-**Key architectural concepts:**
+---
 
-1. **Bundler protocol (static methods, no instances)**
-   Each platform is a static enum (DarwinBundler, GenericLinuxBundler,
-   etc.). BundlerChoice maps CLI selection to concrete type.
-   When reviewing: check if new bundlers follow the static enum pattern.
+## Repo: moreSwift/swift-bundler
 
-2. **Configuration system (TOML with overlays)**
-   Format version 3. @Configuration(overlayable:) macro generates
-   overlay/flattening boilerplate. ConfigurationFlattener resolves
-   platform/bundler/arch-specific overrides. When reviewing: check
-   if new config fields use the macro system correctly.
+Xcode-independent tool for cross-platform Swift app bundling.
+macOS, Linux (AppImage/RPM), Windows (MSI), Android (APK).
 
-3. **RichError pattern**
-   Every utility defines ErrorMessage enum + typealias Error =
-   RichError<ErrorMessage>. Errors form chains via cause. Typed
-   throws throughout. When reviewing: check error handling follows
-   this pattern.
+### Bundler Protocol
 
-4. **Builder protocol for subprojects**
-   static func build(_ context: some BuilderContext) async throws
-   Builders receive context via stdin JSON.
+Static methods, no instances. Each platform is a static enum:
+`DarwinBundler`, `GenericLinuxBundler`, `AppImageBundler`, `RPMBundler`,
+`GenericWindowsBundler`, `MSIBundler`, `APKBundler`.
 
-5. **Testing**
-   Swift Testing (@Suite(.serialized)), fixture-based with
-   withFixture() helper. Integration tests for full create→bundle→run.
+`BundlerChoice` maps CLI to concrete type.
 
-### stackotter/swift-macro-toolkit
+### Configuration System
 
-High-level abstraction over swift-syntax for Swift macro authors.
+TOML-based (`Bundler.toml`), format version 3.
+`@Configuration(overlayable:)` macro generates overlay/flattening.
+`ConfigurationFlattener` resolves platform/bundler/arch overrides.
 
-**Key architectural concepts:**
+### RichError Pattern
 
-1. **RepresentableBySyntax base protocol**
-   All wrappers hold _syntax: UnderlyingSyntax. Users can always
-   drop down to raw swift-syntax API.
+Every utility: `ErrorMessage` enum + `typealias Error = RichError<ErrorMessage>`.
+Errors chain via `cause`. Typed throws throughout.
 
-2. **Type wrappers (16 kinds)**
-   Unified under Type enum + TypeProtocol. Covers SimpleType,
-   ArrayType, FunctionType, OptionalType, etc.
+### Builder Protocol
 
-3. **Literal value extraction**
-   LiteralProtocol with .value property. Handles hex, octal, binary,
-   underscores, escape sequences, raw strings.
+`static func build(_ context: some BuilderContext) async throws -> BuilderResult`
+Builders receive context via stdin JSON.
 
-4. **DeclGroup wrappers**
-   Struct, Enum, Class, Actor, Extension, Protocol unified under
-   DeclGroup enum for exhaustive pattern matching.
+### Testing
 
-5. **Diagnostics builder**
-   Fluent DiagnosticBuilder(for:).message(...).severity(...).build()
+Swift Testing `@Suite(.serialized)`. Fixture-based with `withFixture()`.
+Integration tests for full create→bundle→run.
 
-6. **Testing**
-   Integration via swift-macro-testing (Point-Free), unit tests
-   for wrappers. swift-syntax version bumps are most common PR type.
+### Directory Layout
 
-## Reading Time Estimates
+```
+Sources/
+├── swift-bundler/          # CLI entry
+├── SwiftBundler/           # Core library
+│   ├── Bundler/            # Platform bundlers
+│   ├── Commands/           # CLI subcommands
+│   ├── Configuration/      # TOML config system
+│   └── Utility/
+├── SwiftBundlerBuilders/   # Subproject builder API
+├── SwiftBundlerRuntime/    # Hot reloading runtime
+└── SwiftBundlerMacrosPlugin/
+```
 
-- New code: ~30 lines/minute
-- Modified code: ~50 lines/minute
-- Minimum per file: 0.5 minutes
+---
+
+## Repo: stackotter/swift-macro-toolkit
+
+High-level abstraction over swift-syntax for macro authors.
+
+### RepresentableBySyntax
+
+Base protocol. All wrappers hold `_syntax: UnderlyingSyntax`.
+Users can always drop to raw swift-syntax API.
+
+### Type Wrappers
+
+16 kinds unified under `Type` enum + `TypeProtocol`:
+SimpleType, ArrayType, FunctionType, OptionalType, MemberType, etc.
+
+### Literal Extraction
+
+`LiteralProtocol` with `.value`. Handles hex, octal, binary, underscores,
+escape sequences, raw strings.
+
+### DeclGroup Wrappers
+
+`Struct`, `Enum`, `Class`, `Actor`, `Extension`, `Protocol` unified under
+`DeclGroup` enum for exhaustive pattern matching.
+
+### Diagnostics Builder
+
+`DiagnosticBuilder(for:).message(...).severity(...).fixIt(...).build()`
+
+### Testing
+
+Integration via swift-macro-testing (Point-Free). Unit tests for wrappers.
+Most common PR: swift-syntax version bumps.
+
+### Directory Layout
+
+```
+Sources/
+├── MacroToolkit/              # Core library
+├── MacroToolkitExamplePlugin/ # Example macros
+└── MacroToolkitExample/       # Test target
+```
