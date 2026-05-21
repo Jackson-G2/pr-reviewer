@@ -39,11 +39,18 @@ git clone --depth=1 https://github.com/{owner}/{repo}.git /tmp/{repo}
 
 ### 3. Read Context
 
-For every changed file:
-- Read the full current file (not just the patch)
+For modified files:
+- Read the current version on the base branch
 - Read its imports/dependencies
 - Read the protocol it conforms to
-- Understand how it fits into the system
+
+For new files (status=added):
+- They don't exist on the base branch yet — read the patch content
+- Read the files they import/depend on from the base branch
+- Read the protocol they conform to from the base branch
+
+For deleted files:
+- Read the current version to understand what's being removed
 
 ### 4. Analyze
 
@@ -61,15 +68,21 @@ PR #{number}: {title}
 +{additions} / -{deletions} across {files} files, {commits} commits
 
 COMPONENT MAP
-  {group} ({files} files, +{add} -{del})
+  {group} ({files} files, +{add} -{del}) — {percent}% of changes
     {status} +{add} -{del}  {filepath}
 
 ARCHITECTURE
-  {ASCII diagram}
-  {NewType} ({kind})
-    Purpose: {one line}
-    File: {path}
-    Used by: {consumers}
+  {ASCII diagram of data flow}
+
+  NEW TYPES:
+    {NewType} ({kind})
+      Purpose: {one line}
+      File: {path}
+      Used by: {consumers}
+
+  MODIFIED:
+    {ExistingType} — {what changed}
+      File: {path}
 
 ISSUES
   [{CATEGORY}] {title}
@@ -78,12 +91,19 @@ ISSUES
     {fix}
 
 REVIEW ORDER
-  1. {file} ({lines}L, ~{minutes}min)
+  1. {file} ({lines}L, ~{minutes}min) [CORE]
      Look for: {focus}
      Depends on: {deps}
 
+  2. {file} ({lines}L, ~{minutes}min) [PERIPHERAL]
+     Look for: {focus}
+
 TOTAL ESTIMATED REVIEW TIME: {minutes} minutes
 ```
+
+Mark files as [CORE] (new types, integration points, architectural changes)
+or [PERIPHERAL] (view updates, example changes, minor modifications).
+Put all [CORE] files first in review order.
 
 ## Issue Categories
 
