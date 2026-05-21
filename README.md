@@ -1,152 +1,85 @@
-# PR Reviewer
+# PR Reviewer Skill
 
-Architecture-focused PR reviewer for large open-source pull requests.
+A methodology for reviewing large PRs (300+ lines) on open-source Swift repos.
 
-Given a PR URL, it fetches the full diff via GitHub's public API, analyzes the changes against known codebase architecture, and produces a structured review with:
+This is not a script. It's a skill you load into an AI agent (Hermes, Cursor, Claude, etc.) that teaches it how to review PRs by reading the actual code — not pattern-matching regex.
 
-- Component map (file groups + line counts)
-- Architecture analysis (data flow, type relationships)
-- Concrete issues (bugs, duplication, test gaps, API risks)
-- Suggested review order with time estimates
+## What It Does
+
+Given a PR URL, the agent will:
+
+1. Fetch the PR diff via GitHub's public API
+2. Clone the repo and read the actual current source files
+3. Understand context by reading neighboring code and dependencies
+4. Produce a structured architecture review with:
+   - Component map (file groups + line counts)
+   - Architecture analysis (what the PR adds/changes)
+   - Concrete issues (bugs, duplication, test gaps — with file:line)
+   - Suggested review order with time estimates
 
 No fluff. No praise. Reads like tool output.
 
-## Install
+## How to Use
+
+### Option 1: Load as an Agent Skill
+
+Copy `SKILL.md` into your agent's skill directory:
 
 ```bash
-git clone https://github.com/Jackson-G2/pr-reviewer.git
-cd pr-reviewer
-pip install -r requirements.txt
+# Hermes
+cp SKILL.md ~/.hermes/skills/pr-reviewer/SKILL.md
+
+# Cursor (as a rule)
+cp SKILL.md .cursorrules
+
+# Claude (paste into system prompt)
+cat SKILL.md
 ```
 
-## Usage
+Then ask your agent: "Review PR https://github.com/moreSwift/swift-cross-ui/pull/414"
 
-```bash
-# Review a PR
-python pr_reviewer.py https://github.com/moreSwift/swift-cross-ui/pull/414
+### Option 2: Use as a Prompt Template
 
-# Output to file
-python pr_reviewer.py https://github.com/moreSwift/swift-cross-ui/pull/414 -o review.md
+Copy the contents of `SKILL.md` and paste it into any LLM chat with the PR URL.
 
-# JSON output (for piping to other tools)
-python pr_reviewer.py https://github.com/moreSwift/swift-cross-ui/pull/414 --json
-```
+### Option 3: GitHub Action (Coming Soon)
 
-## Output Format
-
-```
-PR #414: Feat/focus chain+focus state
-moreSwift/swift-cross-ui — MiaKoring
-+2600 / -204 across 48 files, 48 commits
-
-COMPONENT MAP
-=============
-  AppKitBackend (4 files, +301 -73)
-  SwiftCrossUI (22 files, +579 -16)
-  GtkBackend (2 files, +124 -5)
-  ...
-
-ARCHITECTURE
-============
-  FocusState<Value> (property wrapper)
-    Purpose: Bidirectional focus state binding
-    File: Sources/SwiftCrossUI/State/FocusState.swift
-    Used by: View/focused(_:), FocusModifier
-
-  FocusChainManager (protocol)
-    Purpose: Tab-cycle management across backends
-    File: Sources/SwiftCrossUI/Backend/FocusChainManager.swift
-    Used by: NSCustomWindow, CustomWindow
-
-ISSUES
-======
-  [BUG] FocusData equality uses hashValue comparison
-    File: Sources/SwiftCrossUI/Values/FocusData.swift:35
-    hashValue comparison causes false positives on collision
-    Fix: Compare type and match directly
-
-  [DUPLICATION] FocusStateManager copy-pasted 4 times
-    Files: AppKitBackend+Focus.swift, GtkBackend+Focus.swift, WinUIBackend+Focus.swift, DummyBackend.swift
-    Pattern: [ObjectIdentifier: Set<FocusData>], register(), handleFocusChange()
-    Extract to: Generic FocusStateManager<Widget> in SwiftCrossUI core
-
-REVIEW ORDER
-============
-  1. Focusability.swift (10L, ~0.5min)
-     Look for: Enum cases, no concerns expected
-     Depends on: nothing
-
-  2. FocusData.swift (43L, ~1.5min)
-     Look for: Equality implementation (known bug)
-     Depends on: nothing
-
-  ...
-
-TOTAL ESTIMATED REVIEW TIME: 45 minutes
-```
+A GitHub Action that automatically reviews PRs when they're opened.
 
 ## Supported Repos
 
-The tool has built-in architecture knowledge for:
+Built-in knowledge for:
 
 | Repo | Description |
 |------|-------------|
 | moreSwift/swift-cross-ui | SwiftUI-like cross-platform UI framework |
 | moreSwift/swift-bundler | Xcode-independent Swift app bundler |
 | stackotter/swift-macro-toolkit | High-level swift-syntax abstraction for macros |
-| stackotter/delta-client | Minecraft client written in Swift |
 
-For other repos, it produces a generic review (component map + issue detection without architecture-specific analysis).
-
-## Adding Repo Knowledge
-
-To add support for a new repo, create a YAML file in `repos/`:
-
-```yaml
-# repos/owner_repo.yaml
-name: owner/repo
-description: What this repo does
-
-architecture:
-  directory_structure: |
-    Sources/
-    ├── Module1/           # Description
-    ├── Module2/           # Description
-    ...
-
-  key_patterns:
-    - name: Pattern Name
-      description: What to watch for
-      files: ["path/to/relevant/files"]
-
-  common_issues:
-    - category: DUPLICATION
-      description: Known duplication hot spot
-      files: ["path/to/duplicated/code"]
-
-testing:
-  framework: "Swift Testing"
-  patterns: ["@Suite", "@Test", "#expect"]
-  backend: "DummyBackend"  # if applicable
-```
+For other repos, the agent produces a generic review (component map + issue detection) without repo-specific architecture analysis.
 
 ## How It Works
 
-1. **Fetch**: Calls GitHub API (public, no auth) to get PR metadata, file diffs, and comments
-2. **Map**: Groups files by component, counts additions/deletions per group
-3. **Analyze**: Cross-references changes against repo-specific architecture knowledge
-4. **Flag**: Identifies concrete issues (bugs, duplication, test gaps, API risks, force casts)
-5. **Order**: Generates dependency-sorted review order with reading time estimates
-6. **Output**: Produces structured, no-fluff review
+The skill teaches the agent a methodology, not a database:
 
-## Contributing
+1. **Clone fresh every time** — no stale cached knowledge
+2. **Read the actual code** — understand context, not just diffs
+3. **Follow architectural patterns** — know how each repo is structured
+4. **Flag concrete issues** — bugs, duplication, test gaps, API risks
+5. **Output structured reviews** — no fluff, no opinions
 
-This tool is designed for reviewing PRs on stackotter's repos, but contributions welcome:
+The agent always works with live code. Architecture knowledge is about stable patterns (how BackendFeatures works, how the View lifecycle flows), not snapshots of specific files.
 
-- Add repo knowledge for other projects
-- Improve issue detection heuristics
-- Add new output formats
-- Fix bugs
+## Adding New Repos
+
+To add support for a new repo, add a section to SKILL.md under "Repo-Specific Patterns" with:
+
+1. **What the repo does** (one paragraph)
+2. **Key architectural concepts** (the stable patterns that don't change often)
+3. **Directory structure** (the general layout)
+4. **Common PR types** (what kinds of changes come in)
+
+Don't include specific file contents — those go stale. Include patterns and concepts.
 
 ## License
 
