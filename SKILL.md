@@ -1,6 +1,6 @@
 ---
 name: pr-reviewer
-description: "Architecture-focused PR reviewer for open-source Swift repos. Clones repo fresh, reads live code, produces structured review with issues and review order."
+description: "Architecture-focused PR reviewer for open-source Swift repos. Clones repo fresh, reads live code, produces structured review with issues and review order. Works for any PR size."
 tags: [code-review, github, swift]
 triggers:
   - "review PR"
@@ -52,7 +52,15 @@ For new files (status=added):
 For deleted files:
 - Read the current version to understand what's being removed
 
-### 4. Analyze
+### 4. Fetch Existing Review Comments
+
+Fetch inline review comments (`/pulls/{n}/comments`) and general comments
+(`/issues/{n}/comments`). If the owner has already reviewed:
+- List each comment with its status (RESOLVED / ADDRESSED / PENDING)
+- Note which files have pending feedback
+- This prevents re-flagging issues the owner already raised
+
+### 5. Analyze
 
 For each file determine:
 - Architectural layer
@@ -60,8 +68,9 @@ For each file determine:
 - Consistency with rest of codebase
 - What could go wrong
 
-### 5. Output
+### 6. Output
 
+For large PRs (200+ lines):
 ```
 PR #{number}: {title}
 {owner}/{repo} — {author}
@@ -84,6 +93,9 @@ ARCHITECTURE
     {ExistingType} — {what changed}
       File: {path}
 
+EXISTING REVIEW FEEDBACK
+  {file}:{line} — {comment summary} [{STATUS}]
+
 ISSUES
   [{CATEGORY}] {title}
     File: {path}:{line}
@@ -101,6 +113,29 @@ REVIEW ORDER
 TOTAL ESTIMATED REVIEW TIME: {minutes} minutes
 ```
 
+For small PRs (<200 lines):
+```
+PR #{number}: {title}
+{owner}/{repo} — {author}
++{additions} / -{deletions} across {files} files
+
+DIFF
+  {file}:{lines}
+  {before → after, or new code}
+
+EXISTING REVIEW FEEDBACK
+  {file}:{line} — {comment summary} [{STATUS}]
+
+ISSUES
+  [{CATEGORY}] {title}
+    File: {path}:{line}
+    {what's wrong}
+    {fix}
+
+VERDICT: {APPROVE / REQUEST CHANGES / NEEDS DISCUSSION}
+  {one-line summary of recommendation}
+```
+
 Mark files as [CORE] (new types, integration points, architectural changes)
 or [PERIPHERAL] (view updates, example changes, minor modifications).
 Put all [CORE] files first in review order.
@@ -115,6 +150,18 @@ Only flag objective problems. No style opinions.
 [TEST GAP] — Specific untested scenarios
 [API RISK] — Public API hard to change later
 [FORCE CAST] — Unguarded force casts (check if guarded first)
+
+## Issue Severity
+
+MUST FIX — Blocks merge. Bugs, crashes, data loss.
+SHOULD FIX — Should address before merge. Missing tests, hardcoded values, premature API surface.
+CONSIDER — Nice to have. Naming, minor restructuring, documentation.
+
+## Verdicts (small PRs only)
+
+APPROVE — No issues, or issues are all CONSIDER level.
+REQUEST CHANGES — Has MUST FIX or SHOULD FIX issues.
+NEEDS DISCUSSION — Design decision needed, not a clear fix.
 
 ## Reading Time
 
